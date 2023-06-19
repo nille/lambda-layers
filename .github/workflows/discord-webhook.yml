@@ -15,7 +15,6 @@ jobs:
       aws_region: us-east-1
       license_info: MIT
       compatible_runtimes: python3.6, python3.7, python3.8, python3.9, python3.10
-
     steps:
 
       - name: Checkout repository
@@ -73,9 +72,6 @@ jobs:
         with:
           path: discord_webhook_previous_layer_hash.txt
           key: discord-webhook-layer-hash-${{ hashFiles('layer_hash.txt') }}
-        run: |
-          echo "Caching previous layer hash"
-
 
       - name: Publish Lambda layer to AWS if changed or new
         if: steps.cache-layer-hash.outputs.cache-hit != 'true'
@@ -96,5 +92,3 @@ jobs:
         with:
           name: $layer_name
           path: lambda_layer.zip
-        run: |
-          echo "Uploading lambda layer artifact"
