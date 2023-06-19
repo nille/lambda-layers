@@ -1,0 +1,90 @@
+name: Build and publish AWS Lambda layer discord-webhook
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      layer_name: discord-webhook
+      layer_description: discord-webhook layer
+      aws_region: us-east-1
+      license_info: MIT
+      compatible_runtimes: python3.6, python3.7, python3.8, python3.9, python3.10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.10.11
+
+      - name: Install dependencies
+        run: |
+          mkdir package
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir -r requirements.txt --target ./package
+
+      - name: Package Lambda function
+        run: |
+          rm -r ./package/*dist-info __pycache__
+          cd package
+          zip -r ../lambda_layer.zip .
+
+
+      - name: Create or update Lambda layer
+        run: |
+          LAYER_ARN=$(aws lambda list-layers --query "Layers[?LayerName=='$layer_name'].LatestMatchingVersion.LayerVersionArn" 
+          --output text 2>/dev/null) || true   
+          if [ -z "$LAYER_ARN" ]; then
+            aws lambda publish-layer-version \
+              --layer-name $layer_name \
+              --description $layer_description \
+              --zip-file fileb://lambda_layer.zip \
+              --compatible-runtimes $compatible_runtimes
+          else
+            aws lambda update-layer-version \
+              --layer-name $layer_name \
+              --zip-file fileb://lambda_layer.zip \
+              --compatible-runtimes $compatible_runtimes
+          fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Calculate layer hash
+        run: |
+          sha256sum lambda_layer.zip > layer_hash.txt
+
+      - name: Cache previous layer hash
+        uses: actions/cache@v3
+        id: discord-webhook-layer-hash
+        with:
+          path: discord_webhook_previous_layer_hash.txt
+          key: discord-webhook-layer-hash-${{ hashFiles('layer_hash.txt') }}
+
+      - name: Publish Lambda layer to AWS if changed or new
+        if: steps.cache-layer-hash.outputs.cache-hit != 'true'
+        run: |
+          aws lambda publish-layer-version \
+            --layer-name $layer_name \
+            --description $layer_description \
+            --zip-file fileb://lambda_layer.zip \
+            --compatible-runtimes $compatible_runtimes
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Upload lambda layer artifact if changed or new
+        uses: actions/upload-artifact@v3
+        if: steps.cache-layer-hash.outputs.cache-hit != 'true'
+        with:
+          name: $layer_name
+          path: lambda_layer.zip
+
