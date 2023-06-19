@@ -15,30 +15,34 @@ jobs:
       aws_region: us-east-1
       license_info: MIT
       compatible_runtimes: python3.6, python3.7, python3.8, python3.9, python3.10
+
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v3
+
       - name: Set up Python 3.10
         uses: actions/setup-python@v4
         with:
           python-version: 3.10.11
 
+      - name: Prepare working directory
+        run: |
+          cd $directory
+
       - name: Install dependencies
-        working-directory: $directory
         run: |
           mkdir package
           python -m pip install --upgrade pip
           pip install --no-cache-dir -r requirements.txt --target ./package
 
       - name: Package Lambda function
-        working-directory: $directory
         run: |
           rm -r ./package/*dist-info __pycache__
           cd package
           zip -r ../lambda_layer.zip .
 
       - name: Create or update Lambda layer
-        working-directory: $directory
         run: |
           LAYER_ARN=$(aws lambda list-layers --query "Layers[?LayerName=='$layer_name'].LatestMatchingVersion.LayerVersionArn" 
           --output text 2>/dev/null) || true   
@@ -60,12 +64,10 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
       - name: Calculate layer hash
-        working-directory: $directory
         run: |
           sha256sum lambda_layer.zip > layer_hash.txt
 
       - name: Cache previous layer hash
-        working-directory: $directory
         uses: actions/cache@v3
         id: discord-webhook-layer-hash
         with:
@@ -76,7 +78,6 @@ jobs:
 
 
       - name: Publish Lambda layer to AWS if changed or new
-        working-directory: $directory
         if: steps.cache-layer-hash.outputs.cache-hit != 'true'
         run: |
           aws lambda publish-layer-version \
@@ -90,7 +91,6 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
       - name: Upload lambda layer artifact if changed or new
-        working-directory: $directory
         uses: actions/upload-artifact@v3
         if: steps.cache-layer-hash.outputs.cache-hit != 'true'
         with:
