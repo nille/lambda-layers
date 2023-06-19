@@ -1,0 +1,93 @@
+name: Build and publish AWS Lambda layer discord-webhook
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  deploy-discord-webhook:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./discord-webhook
+    env:
+      layer_name: discord-webhook
+      layer_description: discord-webhook layer
+      aws_region: us-east-1
+      license_info: MIT
+      compatible_runtimes: python3.6 python3.7 python3.8 python3.9 python3.10
+      is_public: true
+      version_number: 1
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.10.11
+
+      - name: Install dependencies
+        run: |
+          mkdir package
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir -r requirements.txt --target ./package
+
+      - name: Package Lambda function
+        run: |
+          cd package
+          zip -r ../lambda_layer.zip .
+
+      - name: Delete all previous Lambda layer versions
+        run: |
+          # Get the layer name
+          layer_name=$layer_name
+          # Get the list of layer versions
+          layer_versions=$(aws lambda list-layer-versions --layer-name $layer_name | jq -r '.LayerVersions[].Version')
+          # Loop through each layer version and delete it
+          for version in $layer_versions; do
+            aws lambda delete-layer-version --layer-name $layer_name --version-number $version
+          done
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.aws_region }}
+
+
+      - name: Publish Lambda layer to AWS
+        id: publish-layer
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          CURRENT_VERSION=$(aws lambda publish-layer-version \
+            --layer-name $layer_name \
+            --description "$layer_description" \
+            --zip-file fileb://lambda_layer.zip \
+            --compatible-runtimes $compatible_runtimes \
+            --license-info $license_info | jq -r '.Version')
+          echo "CURRENT_VERSION=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.aws_region }}
+
+      - name: Make lambda layer version public
+        if: ${{ env.is_public == 'true' }}
+        run: |
+          aws lambda add-layer-version-permission --layer-name $layer_name \
+            --version-number ${{ steps.publish-layer.outputs.CURRENT_VERSION }} \
+            --statement-id $layer_name-make-public --action lambda:GetLayerVersion --principal "*"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.aws_region }}
+
+
+      - name: Upload lambda layer artifact if changed or new
+        uses: actions/upload-artifact@v3
+        with:
+          name: $layer_name
+          path: /home/runner/work/lambda-layers/lambda-layers/discord-webhook/lambda_layer.zip
