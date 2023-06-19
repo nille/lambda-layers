@@ -6,11 +6,13 @@ on:
       - main
 
 jobs:
-  deploy:
+  deploy-discord-webhook:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./discord-webhook
     env:
       layer_name: discord-webhook
-      directory: discord-webhook
       layer_description: discord-webhook layer
       aws_region: us-east-1
       license_info: MIT
@@ -24,12 +26,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: 3.10.11
-
-      - name: Prepare working directory
-        run: |
-          cd $directory
-          pwd
-          ls -lah
 
       - name: Install dependencies
         run: |
