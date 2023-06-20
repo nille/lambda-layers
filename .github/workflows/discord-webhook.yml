@@ -15,7 +15,7 @@ jobs:
     env:
       layer_name: discord-webhook
       layer_description: discord-webhook layer
-      aws_region: us-east-1
+      aws_region: eu-north-1
       license_info: MIT
       compatible_runtimes: python3.6 python3.7 python3.8 python3.9 python3.10
       is_public: true
